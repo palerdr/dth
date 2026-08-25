@@ -1,4 +1,4 @@
-"""Steps 3-4: batched rungs against the scalar oracles and against LP-certified values."""
+"""The scalar ladder and the fused numba ladder against each other and against LP-certified values."""
 import numpy as np
 import pytest
 
@@ -10,8 +10,13 @@ def random_batch(rng, B):
 
 
 def structured_batch(rng, B):
-    # success values monotone in the lag, as real classes tend to be
     return np.sort(rng.uniform(-1, 1, (B, 60)), axis=1), rng.uniform(-1, 1, B)
+
+
+def ladder(s, f):
+    r = np.empty(60)
+    q = np.empty(60)
+    return m._ladder(np.ascontiguousarray(s, dtype=np.float64), float(f), r, q)
 
 
 def test_solve_result_post_init():
@@ -22,73 +27,71 @@ def test_solve_result_post_init():
     assert not r.certified and r.value is None
     r = m.SolveResult(maximin=np.nan, minimax=np.nan, kind=m.LP)
     assert not r.certified and r.value is None
-    r = m.SolveResult(maximin=0.3, minimax=0.3 - 1e-15, kind=m.PURE)   # rounding can make the gap slightly negative
+    r = m.SolveResult(maximin=0.3, minimax=0.3 - 1e-15, kind=m.PURE)
     assert r.certified
 
 
-def test_toeplitz_matvec_matches_scalar():
+def test_M_dot_matches_full_matrix():
     rng = np.random.default_rng(3)
-    S, F = random_batch(rng, 64)
-    q = rng.uniform(0, 1, (64, 60))
-    q /= q.sum(1, keepdims=True)
-    Mq = m.toeplitz_matvec(S, F, q)
-    for i in range(64):
-        assert np.allclose(Mq[i], m._M_dot(S[i], F[i], q[i]), atol=1e-12, rtol=0)
-        assert np.allclose(Mq[i], m.full_matrix(S[i], F[i]) @ q[i], atol=1e-12, rtol=0)
+    for _ in range(50):
+        s, f = rng.uniform(-1, 1, 60), rng.uniform(-1, 1)
+        q = rng.uniform(0, 1, 60)
+        q /= q.sum()
+        assert np.allclose(m._M_dot(s, f, q), m.full_matrix(s, f) @ q, atol=1e-12, rtol=0)
 
 
-def test_rung1_batch_matches_scalar():
-    rng = np.random.default_rng(4)
-    S, F = random_batch(rng, 500)
-    lo, hi = m.rung1_batch(S, F)
-    for i in range(500):
-        r = m.try_rung1(S[i], F[i])
-        assert lo[i] == r.maximin and hi[i] == r.minimax
-
-
-def test_rung2_batch_matches_scalar():
+def test_ladder_matches_scalar_rungs():
     rng = np.random.default_rng(5)
+    edge_cases = 0
     for maker in (random_batch, structured_batch):
         S, F = maker(rng, 300)
-        lo, hi = m.rung2_batch(S, F)
-        mismatched_usability = 0
         for i in range(300):
-            r = m.try_rung2(S[i], F[i])
-            if (r is None) != bool(np.isnan(lo[i])):
-                mismatched_usability += 1      # rounding at the overflow edge can differ; must be rare
-                continue
-            if r is not None:
-                assert lo[i] == pytest.approx(r.maximin, abs=1e-9)
-                assert hi[i] == pytest.approx(r.minimax, abs=1e-9)
-        assert mismatched_usability <= 2
+            value, kind = ladder(S[i], F[i])
+            r1 = m.try_rung1(S[i], F[i])
+            r2 = m.try_rung2(S[i], F[i])
+            if kind == m.PURE:
+                assert r1.certified and value == pytest.approx(r1.value, abs=1e-12)
+            elif kind == m.SUPPORT:
+                assert not r1.certified
+                if r2 is None or not r2.certified:
+                    edge_cases += 1
+                else:
+                    assert value == pytest.approx(r2.value, abs=1e-9)
+            else:
+                assert not r1.certified
+                if r2 is not None and r2.certified:
+                    edge_cases += 1
+    assert edge_cases <= 3
 
 
-def test_bounds_bracket_lp_value():
+def test_scalar_bounds_bracket_lp_value():
     rng = np.random.default_rng(6)
     S, F = structured_batch(rng, 60)
-    lo1, hi1 = m.rung1_batch(S, F)
-    lo2, hi2 = m.rung2_batch(S, F)
     for i in range(60):
         res = m.try_rung3(S[i], F[i])
         assert res.certified and res.kind == m.LP
         v = res.value
-        assert lo1[i] <= v + 2e-6 and hi1[i] >= v - 2e-6
-        if not np.isnan(lo2[i]):
-            assert lo2[i] <= v + 2e-6 and hi2[i] >= v - 2e-6
+        r1 = m.try_rung1(S[i], F[i])
+        assert r1.maximin <= v + 2e-6 and r1.minimax >= v - 2e-6
+        r2 = m.try_rung2(S[i], F[i])
+        if r2 is not None:
+            assert r2.maximin <= v + 2e-6 and r2.minimax >= v - 2e-6
 
 
-def test_solve_chunk_matches_solve_class():
+def test_ladder_matches_solve_class():
     rng = np.random.default_rng(7)
     S, F = structured_batch(rng, 200)
-    S[0] = 0.5; F[0] = 0.5                          # everything equal: pure, value 0.5
-    S[1] = 1.0; F[1] = 1.0                          # every continuation is a win
-    S[2] = np.linspace(-1, 1, 60); F[2] = -1.0      # the Checker's c = 1 pins the Dropper at -1
-    vals, kinds = m.solve_chunk(S, F)
-    assert kinds[0] == m.PURE and vals[0] == 0.5
-    assert kinds[1] == m.PURE and vals[1] == 1.0
-    assert kinds[2] == m.PURE and vals[2] == -1.0
-    assert vals.dtype == np.float64 and kinds.dtype == np.uint8 and (kinds <= m.LP).all()
+    S[0] = 0.5; F[0] = 0.5
+    S[1] = 1.0; F[1] = 1.0
+    S[2] = np.linspace(-1, 1, 60); F[2] = -1.0
+    kinds = []
     for i in range(200):
-        r = m.solve_class(S[i], F[i])
-        assert abs(vals[i] - r.value) <= m.MAX_SADDLE_GAP + 1e-12   # two certified midpoints differ by at most the gate
-    print(f"\nroute mix on the structured batch (pure, support, lp): {np.bincount(kinds, minlength=3)}")
+        value, kind = ladder(S[i], F[i])
+        kinds.append(kind)
+        expected = m.solve_class(S[i], F[i])
+        if kind != m.LP:
+            assert abs(value - expected.value) <= m.MAX_SADDLE_GAP + 1e-12
+    assert kinds[0] == m.PURE and ladder(S[0], F[0])[0] == 0.5
+    assert kinds[1] == m.PURE and ladder(S[1], F[1])[0] == 1.0
+    assert kinds[2] == m.PURE and ladder(S[2], F[2])[0] == -1.0
+    print(f"\nladder routing on the structured batch (pure, support, lp): {np.bincount(kinds, minlength=3)}")
