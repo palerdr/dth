@@ -1,0 +1,1 @@
+Compact Solver for the Dropping the Handkerchief Gamble.
