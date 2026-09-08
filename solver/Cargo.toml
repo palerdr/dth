@@ -1,0 +1,14 @@
+[package]
+name = "solver"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "You build the Drop the Handkerchief solver through ARCHITECTURE.md."
+readme = "ARCHITECTURE.md"
+
+[dependencies]
+thiserror = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

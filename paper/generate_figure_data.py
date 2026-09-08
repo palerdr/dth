@@ -1,76 +1,53 @@
-"""Generate the exact data used by the paper's root-strategy figure."""
+"""Write the two data files the paper's pgfplots figures read: the layer widths and the root strategies.
+Needs a finished build in build/V.npy."""
 
+import sys
 from pathlib import Path
 
 import numpy as np
 
-from dth.complete_tablebase import CompleteTablebase
-from dth.packed import PROFILE_COUNT, build_profile_table, encode_class, profile_id
-from dth.solver import reconstruct_transition_class_matrix
-from dth.support_solver import solve_certified_matrix_fast
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+import dth  # noqa: E402
+
+OUT = ROOT / "paper" / "build" / "figures"
 
 
-REPOSITORY = Path(__file__).resolve().parents[1]
-ARTIFACT_DIR = REPOSITORY / "src" / "dth" / "artifacts" / "complete_full_v1"
-OUTPUT = REPOSITORY / "paper" / "build" / "figures"
-
-
-def write_layer_widths(profiles: object) -> None:
-    """Write the exact number of quotient classes in every potential layer."""
-
-    bucket_sizes = np.asarray(
-        [len(bucket) for bucket in profiles.bucket_profiles], dtype=np.int64
-    )
-    widths = np.convolve(bucket_sizes, bucket_sizes)
-    if widths.size != 1201 or int(widths.sum()) != PROFILE_COUNT**2:
-        raise RuntimeError("potential-layer widths do not cover the quotient table")
-
-    with (OUTPUT / "layer_widths.dat").open("w", encoding="ascii") as handle:
-        handle.write("potential classes\n")
-        for potential, width in enumerate(widths):
-            handle.write(f"{potential} {int(width)}\n")
+def equalizer(s, f):
+    """The clipped full-support equilibrium of the stage matrix (paper, Proposition 6.3): the Dropper's
+    mix, the Checker's mix, and the certificate bounds (lower, upper)."""
+    d0, dS = s[0] - f, np.diff(s)
+    r = np.zeros(60)
+    r[0] = 1.0
+    for k in range(1, 60):
+        r[k] = -np.dot(dS[:k], r[k - 1::-1]) / d0
+    r = np.clip(r, 0.0, None)
+    r /= r.sum()
+    g = np.arange(60)[None, :] - np.arange(60)[:, None]
+    M = np.where(g >= 0, s[g.clip(min=0)], f)
+    return r, r[::-1], (r @ M).min(), (M @ r[::-1]).max()
 
 
 def main() -> None:
-    profiles = build_profile_table()
-    tablebase = CompleteTablebase(ARTIFACT_DIR)
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    write_layer_widths(profiles)
+    T = dth.build_table()
+    V = np.load(ROOT / "build" / "V.npy", mmap_mode="r")
+    OUT.mkdir(parents=True, exist_ok=True)
 
-    def class_matrix(checker: int, dropper: int) -> np.ndarray:
-        success = np.empty(60, dtype=np.float64)
-        for lag in range(1, 61):
-            child = int(profiles.success_child_by_profile[checker, lag - 1])
-            success[lag - 1] = (
-                1.0
-                if child < 0
-                else -tablebase.value_of_class(dropper * PROFILE_COUNT + child)
-            )
+    sizes = np.array([len(b) for b in T.bucket], dtype=np.int64)
+    widths = np.convolve(sizes, sizes)
+    assert widths.size == 1201 and widths.sum() == dth.CLASSES
+    with (OUT / "layer_widths.dat").open("w") as fh:
+        fh.write("potential classes\n")
+        fh.writelines(f"{P} {int(w)}\n" for P, w in enumerate(widths))
 
-        failure_child = int(profiles.failure_child_by_profile[checker])
-        if failure_child < 0:
-            failed = 1.0
-        else:
-            revival = float(profiles.revival_by_profile[checker])
-            continuation = -tablebase.value_of_class(
-                dropper * PROFILE_COUNT + failure_child
-            )
-            failed = revival * continuation + (1.0 - revival)
-        return reconstruct_transition_class_matrix(success, failed)
-
-    root_profile = profile_id(0, 0)
-    root_matrix = class_matrix(root_profile, root_profile)
-    root_value, drop, check, _ = solve_certified_matrix_fast(root_matrix)
-    stored_root = tablebase.value_of_class(encode_class((0, 0, 0, 0)))
-    if abs(root_value - stored_root) > 1e-6:
-        raise RuntimeError("root certificate does not match the stored value")
-
-    with (OUTPUT / "root_strategies.dat").open("w", encoding="ascii") as handle:
-        handle.write("action drop check\n")
-        for action in range(60):
-            handle.write(
-                f"{action + 1} {drop[action]:.10f} {check[action]:.10f}\n"
-            )
+    root = dth.profile(0, 0, T)
+    s, p = -V[root, T.succ[root]], float(T.rev[root])
+    f = p * (-float(V[root, T.fail[root]])) + (1.0 - p)
+    drop, check, lo, hi = equalizer(s, f)
+    assert hi - lo <= dth.MAX_SADDLE_GAP and abs(0.5 * (lo + hi) - V[root, root]) <= dth.MAX_SADDLE_GAP
+    with (OUT / "root_strategies.dat").open("w") as fh:
+        fh.write("action drop check\n")
+        fh.writelines(f"{a + 1} {drop[a]:.10f} {check[a]:.10f}\n" for a in range(60))
 
 
 if __name__ == "__main__":

@@ -10,3 +10,9 @@ wheels/
 .venv
 # macOS
 .DS_Store
+
+# compiled kernel
+*.so
+
+# experiments
+stl.ipynb
