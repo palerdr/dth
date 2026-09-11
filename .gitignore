@@ -16,3 +16,6 @@ wheels/
 
 # experiments
 stl.ipynb
+
+# Local solver notes
+paper/solver_notes.*

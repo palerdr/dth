@@ -1,6 +1,6 @@
 # DTH
 
-We compute one game value for each of the 289,374,121 Drop the Handkerchief state classes in a backward pass over the potential layers. You can find the rules and error bounds in `paper/dth.tex`. You can read about earlier kernel versions in `paper/solver_notes.pdf`.
+We compute one game value for each of the 289,374,121 Drop the Handkerchief state classes in a backward pass over the potential layers. You can find the rules and error bounds in `paper/dth.tex`.
 
 You can build and verify the table with:
 
