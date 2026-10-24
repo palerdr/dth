@@ -7,6 +7,7 @@
 \usepackage{microtype}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{4pt}
+\linespread{0.94}
 \usepackage[font=footnotesize,labelfont=bf,skip=3pt]{caption}
 \usepackage{tikz}
 \usepackage{pgfplots}
@@ -42,7 +43,7 @@
 \setlength{\abovedisplayskip}{5pt}
 \setlength{\belowdisplayskip}{5pt}
 \setlength{\emergencystretch}{1.5em}
-\newcommand{\head}[1]{\par\vspace{5pt}{\large\bfseries #1}\par\vspace{2pt}}
+\newcommand{\head}[1]{\par\vspace{5pt}{\fontsize{11}{12}\selectfont\bfseries #1}\par\vspace{2pt}}
 \captionsetup{hypcap=false}
 \newcommand{\figcap}[1]{\captionof{figure}{#1}}
 \hypersetup{pdftitle={Solving Drop the Handkerchief},pdfauthor={James Cenawood}}
@@ -54,15 +55,16 @@ James Cenawood \hfill September 11, 2026
 With optimal play, the first Dropper wins about \textbf{54.49\%} of games under the survival rule below.
 We compute the values of all \textbf{289 million state classes} in a backward pass.
 
-\begin{minipage}[t]{0.505\textwidth}
+\begin{minipage}[t]{0.55\textwidth}
 \vspace{0pt}
 \head{1. The game}
-In Toshio Sako's \emph{Usogui}, two players take turns as Dropper and Checker.
-Both players know the past outcomes. Each chooses a second from 1 to 60 without seeing the other's choice.
-
-For each player, $s$ is squandered time (ST), the seconds in their cylinder;
-$t$ is total time dead (TTD), the seconds from past injections.
-Write the state as $x=(s_c,t_c,s_d,t_d)$, with Checker first.
+In the final arc of Toshio Sako's \emph{Usogui}, Surpassing the Leader, two players take part in a deadly game: Drop the Handkerchief.
+One player sits in a chair, while the other stands behind them holding a handkerchief.
+A minute timer begins, and the player holding the handkerchief must drop it, and the seated player must check if it is on the ground.
+If a player checks and the handkerchief is on the ground, the difference is injected into their cylinder. If it is not, their full accumulated cylinder + an additional
+60 seconds is injected as penalty. Whoever dies first loses. That is the full game.
+For each player, $s$ is squandered time (ST), the seconds in their cylinder; $t$ is total time dead (TTD), the sum of prior doses.
+We represent the state as $x=(s_c,t_c,s_d,t_d)$, with Checker first.
 Both start at $(s,t)=(0,0)$.
 
 If the Dropper chooses $d\le c$, the Checker succeeds and adds
@@ -80,11 +82,10 @@ p(s,t)=\begin{cases}
 On revival, ST resets, TTD gains the dose, and the players swap roles:
 $x_f=(s_d,t_d,0,t_c+s_c+60)$. Otherwise, the Checker loses.
 We choose this probability formula for the model; the manga does not specify it.
-We exclude the story's extra 61st second.
 
-\head{2. Merge states with the same future}
-Call a profile \emph{failure-fatal} if its next failed check means death ($p=0$).
-We keep its ST and replace its TTD with a common marker $\bot$.
+\head{2. Equivalence Class}
+We denote a profile \emph{failure-fatal} if its next failed check means death ($p=0$).
+We keep its ST and replace its TTD with a sentinel marker $\bot$.
 This grouping is the \emph{quotient}:
 \[
 \varphi(s,t)=\begin{cases}(s,t),&p(s,t)>0,\\(s,\bot),&p(s,t)=0.\end{cases}
@@ -102,7 +103,7 @@ $240+\sum_{t=60}^{240}(241-t)=16{,}711$ with $p>0$, plus 300 markers.
 For two players, we reduce $72{,}600^2$ states to
 $17{,}011^2=289{,}374{,}121$ classes.
 
-\head{3. Solve later states first}
+\head{3. Backwards Sweep}
 We order the classes by a progress score,
 \[
 \Phi=s_c+s_d+\rho_c+\rho_d,\qquad
@@ -116,7 +117,7 @@ Since $0\le\Phi\le1200$, play ends within 1,201 steps.
 We solve from layer 1200 down to 0, using known later values. \textup{QED}
 
 \end{minipage}\hfill
-\begin{minipage}[t]{0.465\textwidth}
+\begin{minipage}[t]{0.42\textwidth}
 \vspace{0pt}
 \centering
 \includegraphics[width=\linewidth,trim=100 10 95 0,clip]{build/figures/seaborn/fig1_revival_probability.pdf}
@@ -125,6 +126,7 @@ We solve from layer 1200 down to 0, using known later values. \textup{QED}
 \includegraphics[width=\linewidth]{build/figures/seaborn/fig2_toeplitz_structure.pdf}
 \figcap{Each diagonal has one success payoff $S_\ell$; each failed check has payoff $F$. We need at most 61 values for the 3,600 action pairs.}
 \vspace{12pt}
+\resizebox{\linewidth}{!}{
 \begin{tikzpicture}[x=0.53cm,y=0.53cm,every node/.style={font=\footnotesize}]
 \fill[figlightgray] (0,0) rectangle (5,5);
 \fill[figpaleteal] (0,0)--(4,0)--(0,4)--cycle;
@@ -147,12 +149,13 @@ We solve from layer 1200 down to 0, using known later values. \textup{QED}
 \node[anchor=south] at (2.5,5.3) {Two players};
 \end{scope}
 \end{tikzpicture}
-\figcap{We merge the grey profiles with the same ST. Both players remain alive. The left panel sketches the region; percentages use the allowed TTD values.}
+}
+\figcap{We merge the grey profiles with the same ST. Both players remain alive. The left panel sketches the region.}
 \end{minipage}
 \newpage
-\begin{minipage}[t]{0.505\textwidth}
+\begin{minipage}[t]{0.55\textwidth}
 \vspace{0pt}
-\head{4. Calculate both players' strategies}
+\head{4. Computing both players' strategies}
 Let $V$ be the current Dropper's win probability minus loss probability.
 The win probability is $(1+V)/2$. A role swap negates $V$. With the next states from Section 1, set
 \[
@@ -168,9 +171,9 @@ M_{d,c}=\begin{cases}S_{c-d+1},&c\ge d,\\F,&c<d.\end{cases}
 The players can randomize their seconds. Their probability vectors
 $a,b$ give $V=\max_a\min_b a^{\mathsf T}Mb$.
 The finite matrix minimax theorem guarantees this value.
-We first test fixed seconds: if the best row minimum equals the smallest column maximum, those choices solve the round.
+We first test a single-second support: if the best row minimum equals the smallest column maximum, those choices solve the round outright in O(60).
 
-To find a pair that makes the opponent indifferent between seconds,
+For a full support, we find a pair that makes the opponent indifferent between seconds,
 put $D=S_1-F$ and $\Delta_m=S_{m+1}-S_m$. For $D\ne0$, compute
 \[
 \boxed{r_1=1,\qquad r_k=-\frac{1}{D}\sum_{m=1}^{k-1}\Delta_m r_{k-m}
@@ -188,7 +191,7 @@ Column differences give the same weights in reverse order.
 Thus both players equalize the opponent's payoffs and form an equilibrium.
 If we clip negative weights to zero, we must check the new pair. \textup{QED}
 
-\head{5. Check the error}
+\head{5. Error Bounds}
 For any probability vectors $a,b$, set
 $L=\min_c(a^{\mathsf T}M)_c$ and $U=\max_d(Mb)_d$.
 The Dropper guarantees $L$; the Checker limits the payoff to $U$.
@@ -204,7 +207,7 @@ $|\widehat V-V|\le(1201-\Phi)5\times10^{-7}$. \textup{QED}
 These are numerical bounds for the stated model; the full-matrix
 fallback uses floating-point checks.
 \end{minipage}\hfill
-\begin{minipage}[t]{0.465\textwidth}
+\begin{minipage}[t]{0.42\textwidth}
 \vspace{0pt}
 \centering
 \resizebox{\linewidth}{!}{
@@ -303,17 +306,12 @@ P(\text{first Dropper wins})=0.54493\pm0.00031.
 \end{gathered}
 \]
 We solve 334,177 classes with fixed actions and
-289,039,944 with the recurrence and gap check.
-No class needs linear programming. We rechecked the saved table at six reference states and 1,200 sampled states; all checks passed.
+289,039,944 with the recurrence and gap check, thus no classes required linear programming.
 
-The repository records a median of \textbf{8.01 seconds} for a complete
+The project records a median of \textbf{8.01 seconds} for a complete
 build on an Apple M5 Pro with 15 threads, including verification and saving.
-We use Python with a C kernel. We bound the full matrix payoffs through
-a proved shortcut for nonnegative weights and a matrix check for the remaining cases;
-\texttt{src/certificate.md} gives the rounding analysis.
-
-To reproduce the table, run \texttt{uv run src/dth.py} from the repository root;
-run \texttt{uv run pytest} for the tests.
+The current implementation uses Python with a C kernel. We bound the full matrix payoffs through
+a proved shortcut for nonnegative weights and a matrix check for the remaining cases.
 
 {\footnotesize\textbf{Sources.} T. Sako, \emph{Usogui}, Shueisha, 2006--2018.
 J. von Neumann, \emph{Math. Ann.} 100, 295--320 (1928).

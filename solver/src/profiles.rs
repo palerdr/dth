@@ -93,6 +93,21 @@ pub fn revived_child(profile: &Profile) -> Result<Option<Profile>, ValueError> {
     }
 }
 
+/// Calculates the catalog ID of a profile in closed form.
+/// Eligible IDs ascend by TTD, then ST. TTD zero holds 240 profiles and each
+/// TTD t in 60..=240 holds 241 - t, so the block offset for t >= 60 is
+/// 240 + (423 - t)(t - 60) / 2. Failure-fatal IDs follow at 16_711 + st.
+pub fn profile_id(profile: &Profile) -> u32 {
+    match *profile {
+        Profile::Eligible { st, ttd: 0 } => st as u32,
+        Profile::Eligible { st, ttd } => (240 + (423 - ttd) * (ttd - 60) / 2 + st) as u32,
+        Profile::FailureFatal { st } => (ELIGIBLE_COUNT + st) as u32,
+    }
+}
+
+pub const ELIGIBLE_COUNT: usize = 16_711;
+pub const PROFILE_COUNT: usize = 17_011;
+
 pub fn potential(profile: &Profile) -> usize {
     match profile {
         Profile::Eligible { st, ttd } => st + ttd,
@@ -101,7 +116,7 @@ pub fn potential(profile: &Profile) -> usize {
 }
 
 pub fn profile_catalog() -> Result<Vec<Profile>, ValueError> {
-    let mut profiles = Vec::with_capacity(17_011);
+    let mut profiles = Vec::with_capacity(PROFILE_COUNT);
     for t in std::iter::once(0).chain(60..=300) {
         for s in 0..300 {
             if eligible(s, t) {

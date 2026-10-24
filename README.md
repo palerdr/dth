@@ -8,6 +8,11 @@ You can build and verify the table with:
 
 You get `build/V.npy`, a 2.3 GB float64 array. You keep the previous file if verification or writing fails.
 
+In this workspace, `build/` links to `../stl/src/dth/artifacts/dth_benchmark/`.
+You keep retained tablebase files in STL and use DTH for solver experiments.
+The saved route table shares STL's compact artifact; the value table retains
+the DTH build's output.
+
 You can run the tests with:
 
     uv run pytest

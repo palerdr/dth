@@ -2,6 +2,7 @@
 __pycache__/
 *.py[oc]
 build/
+/build
 dist/
 wheels/
 *.egg-info
@@ -19,3 +20,11 @@ stl.ipynb
 
 # Local solver notes
 paper/solver_notes.*
+
+# LaTeX intermediate files
+paper/*.aux
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
